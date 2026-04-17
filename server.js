@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -10,9 +11,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Block brute-force: max 5 attempts per IP per 15 minutes
+const presignLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  skipSuccessfulRequests: true, // only count failed attempts
+  message: { error: 'Too many attempts. Try again in 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const s3 = new S3Client({ region: process.env.AWS_REGION });
 
-app.post('/presign', async (req, res) => {
+app.post('/presign', presignLimiter, async (req, res) => {
   const { password, filename, contentType } = req.body;
 
   if (!password || !filename || !contentType) {
